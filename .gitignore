@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+experiments/
+uv.lock
+params_temp.txt
+exp*
+slurm-*.out
+*.log
+ads-finger-printing/
+data/*.json*
