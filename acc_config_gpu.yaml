@@ -1,0 +1,6 @@
+compute_environment: LOCAL_MACHINE
+debug: false
+distributed_type: NO
+mixed_precision: 'no'
+num_processes: 1
+use_cpu: false

@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "readme.md"
 requires-python = "==3.12.*"
 dependencies = [
+    "torch==2.9.1+rocm6.4",
     "accelerate>=1.10.1",
     "datasets>=3.4.1",
     "gpustat>=1.1.1",
@@ -23,4 +24,14 @@ dependencies = [
     "typer>=0.15.2",
     "wandb>=0.19.8",
     "yq>=3.4.3",
+    "lm_eval"
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-rocm6.4" }
+lm_eval = { git = "https://github.com/jwkirchenbauer/lm-evaluation-harness-adsfp.git" }
+
+[[tool.uv.index]]
+# name is user chosen, but used above
+name = "pytorch-rocm6.4"
+url = "https://download.pytorch.org/whl/rocm6.4"

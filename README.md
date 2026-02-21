@@ -1,3 +1,11 @@
+# ⚠️ Old version of code for student accuracy and E[FPR] experiments ⚠️ 
+
+This branch is based on an older development version of the codebase configured for a special cluster (frontier) and includes an additional pipeline stage for evaluating the student checkpoints on the GSM8K test set using the lm-evaluation-harness (stage 6 in `pipeline_frontier.sh`). 
+
+It also includes special logic for running and plotting 100 trials of the same two watermarking settings and control (no-watermark) configuration to simulate detection attempts and develop ROC plots and compute E[FPR] (`launch_exps_frontier.py` and `pipeline_efpr_frontier.sh`). 
+
+This code is included in the public repo on this branch mostly for transparency and therefore is separated from the main code which has been simplfied and cleaned for ease of use and understanding.
+
 # Antidistillation Fingerprinting Supplementary
 
 This repository contains the code for the paper **Antidistillation Fingerprinting**. It provides a standalone, stage-based pipeline that compares two fingerprinting techniques for language models: Antidistillation Fingerprinting (ads) and the fingerprinting scheme induced by Red-and-Green-List Watermarking (radioactive). The pipeline generates teacher traces, fine-tunes a student via LoRA, evaluates fingerprint statistics under multiple settings, and produces plots that relate p-values to teacher quality metrics.

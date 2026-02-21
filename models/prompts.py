@@ -26,13 +26,6 @@ class PromptBuilder:
     def build(self, tokenizer: PreTrainedTokenizerBase, user_prompt: str) -> str:
         """
         Return a prompt using the tokenizer's chat template (DeepSeek R1 compatible).
-
-        Args:
-            tokenizer: Tokenizer providing the chat template.
-            user_prompt: Raw user prompt string.
-
-        Returns:
-            Rendered prompt string including system/user messages.
         """
         user_prompt = user_prompt.rstrip() + "\n"
         messages = []
@@ -61,16 +54,6 @@ class PromptBuilder:
         *,
         add_system: bool = False,
     ) -> str:
-        """Render a prompt from structured chat messages.
-
-        Args:
-            tokenizer: Tokenizer providing the chat template.
-            messages: List of {"role": ..., "content": ...} dicts.
-            add_system: If True, prepend the configured system prompt.
-
-        Returns:
-            Rendered prompt string ready for generation.
-        """
         formatted: list[dict[str, str]] = []
         if add_system and self.system_prompt:
             formatted.append({"role": "system", "content": self.system_prompt})

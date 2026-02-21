@@ -10,14 +10,6 @@ import torch
 
 
 def set_global_seed(seed: int) -> None:
-    """Seed Python, NumPy, and PyTorch RNGs and set runtime env defaults.
-
-    Args:
-        seed: Integer seed used for RNGs.
-
-    Returns:
-        None.
-    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

@@ -8,14 +8,6 @@ from typing import Iterable, Iterator, Sequence
 
 
 def read_json(path: Path) -> dict:
-    """Read a JSON file into a dictionary.
-
-    Args:
-        path: Path to a JSON file.
-
-    Returns:
-        Parsed JSON object as a dict.
-    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"JSON file not found: {path}")
@@ -24,15 +16,6 @@ def read_json(path: Path) -> dict:
 
 
 def write_json(path: Path, payload: dict) -> None:
-    """Write a dictionary to a JSON file.
-
-    Args:
-        path: Destination path for the JSON file.
-        payload: Dictionary to serialize.
-
-    Returns:
-        None.
-    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -40,14 +23,6 @@ def write_json(path: Path, payload: dict) -> None:
 
 
 def iter_jsonl(path: Path) -> Iterator[dict]:
-    """Yield JSON objects from a JSONL file line by line.
-
-    Args:
-        path: Path to a JSON Lines file.
-
-    Yields:
-        One dict per non-empty line.
-    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"JSONL file not found: {path}")
@@ -60,15 +35,6 @@ def iter_jsonl(path: Path) -> Iterator[dict]:
 
 
 def write_jsonl(path: Path, rows: Iterable[dict]) -> None:
-    """Write an iterable of dictionaries to JSON Lines.
-
-    Args:
-        path: Destination path for the JSONL file.
-        rows: Iterable of dictionaries to write.
-
-    Returns:
-        None.
-    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -78,12 +44,5 @@ def write_jsonl(path: Path, rows: Iterable[dict]) -> None:
 
 
 def read_jsonl_rows(path: Path) -> list[dict]:
-    """Read a JSONL file into a list of dictionaries.
-
-    Args:
-        path: Path to a JSONL file.
-
-    Returns:
-        List of parsed JSON objects.
-    """
     return list(iter_jsonl(path))
+

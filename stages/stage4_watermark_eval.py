@@ -25,15 +25,6 @@ EvalEntry = Tuple[Tuple[int, int], float]
 
 
 def _build_student_shared_mask(student_tokenizer, shared_tokens: set[str]) -> torch.BoolTensor:
-    """Build a mask over the student vocab for shared token strings.
-
-    Args:
-        student_tokenizer: Student tokenizer instance.
-        shared_tokens: Set of token strings shared with the teacher.
-
-    Returns:
-        Boolean tensor of shape [student_vocab] marking shared tokens.
-    """
     mask = torch.zeros(len(student_tokenizer), dtype=torch.bool)
     vocab = student_tokenizer.get_vocab()
     for token, idx in vocab.items():
@@ -41,17 +32,8 @@ def _build_student_shared_mask(student_tokenizer, shared_tokens: set[str]) -> to
             mask[idx] = True
     return mask
 
-
 def _aligned_offsets(offsets: Sequence[Tuple[int, int]], limit: int) -> Dict[int, int]:
-    """Build a lookup from end-offset -> student token index for aligned positions.
-
-    Args:
-        offsets: Sequence of (start, end) offsets from tokenizer output.
-        limit: Maximum number of offsets to consider.
-
-    Returns:
-        Mapping from end-offset integer to token index.
-    """
+    """Build a lookup from end-offset -> student token index for aligned positions."""
     result: Dict[int, int] = {}
     for idx, (_, end) in enumerate(offsets[:limit]):
         result[int(end)] = idx
@@ -59,17 +41,6 @@ def _aligned_offsets(offsets: Sequence[Tuple[int, int]], limit: int) -> Dict[int
 
 
 def _prompt_from_row(builder: PromptBuilder, tokenizer, row: Dict, *, add_system: bool) -> str:
-    """Extract or build a prompt from a trace row.
-
-    Args:
-        builder: PromptBuilder used for message-based prompts.
-        tokenizer: Tokenizer used in the prompt builder.
-        row: Trace row dict with "prompt" or "messages".
-        add_system: Whether to insert a system prompt for messages.
-
-    Returns:
-        Prompt text ready for concatenation with the response.
-    """
     if "messages" in row:
         messages = row.get("messages") or []
         return builder.build_from_messages(tokenizer, messages, add_system=add_system)
@@ -80,14 +51,6 @@ def _prompt_from_row(builder: PromptBuilder, tokenizer, row: Dict, *, add_system
 
 
 def run_stage4(cfg: WatermarkEvalConfig) -> Path:
-    """Run Stage 4 to evaluate watermark statistics for a student model.
-
-    Args:
-        cfg: WatermarkEvalConfig with dataset, models, and evaluation settings.
-
-    Returns:
-        Path to the written watermark JSON file.
-    """
     accelerator = Accelerator()
     set_global_seed(cfg.seed)
 
@@ -261,13 +224,21 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
             handle,
         )
 
-    accelerator.wait_for_everyone()
+    # accelerator.wait_for_everyone()
+    # If the barrier is buggy, lets wait instead.
+    wait_seconds = 60*5
+    accelerator.print(f"Waiting {wait_seconds} seconds for other processes to finish...")
+    import time
+    time.sleep(wait_seconds)
+    
 
     if accelerator.is_main_process:
         all_entries: List[Tuple[Tuple[int, int], float]] = []
         for idx in range(accelerator.num_processes):
             shard = tmp_dir / f"rank_{idx:03d}.json"
             if not shard.exists():
+                # If not using wait_for_everyone(), could be missing data.
+                raise RuntimeError(f"Missing shard file: {shard}")
                 continue
             with shard.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
@@ -301,16 +272,12 @@ def run_stage4(cfg: WatermarkEvalConfig) -> Path:
         for shard in tmp_dir.glob("rank_*.json"):
             shard.unlink()
         tmp_dir.rmdir()
-    accelerator.wait_for_everyone()
+    # # Also remove this final barrier if needed.
+    # accelerator.wait_for_everyone()
     return cfg.output_path
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser for Stage 4.
-
-    Returns:
-        Configured ArgumentParser instance.
-    """
     parser = argparse.ArgumentParser(description="Stage 4 – watermark evaluation")
     parser.add_argument("--traces", type=Path, required=True)
     parser.add_argument("--hash-config", type=Path, required=True)
@@ -332,14 +299,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI entrypoint for Stage 4.
-
-    Args:
-        argv: Optional list of CLI arguments (defaults to sys.argv).
-
-    Returns:
-        None.
-    """
     parser = build_parser()
     args = parser.parse_args(argv)
     cfg = WatermarkEvalConfig(

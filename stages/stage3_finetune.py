@@ -19,17 +19,6 @@ from utils.tokenization import load_tokenizer
 
 
 def _mask_prompt(tokenizer, prompt: str, response: str, max_length: int) -> Dict[str, List[int]]:
-    """Build input/label ids with prompt tokens masked from loss.
-
-    Args:
-        tokenizer: Tokenizer to encode prompt and response.
-        prompt: Prompt text.
-        response: Response text.
-        max_length: Maximum sequence length (truncates if needed).
-
-    Returns:
-        Dict with "input_ids" and "labels" arrays.
-    """
     prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
     response_ids = tokenizer(response, add_special_tokens=False)["input_ids"]
     input_ids = (prompt_ids + response_ids)[:max_length]
@@ -39,16 +28,6 @@ def _mask_prompt(tokenizer, prompt: str, response: str, max_length: int) -> Dict
 
 
 def _pad_batch(features: List[Dict], tokenizer, max_length: int) -> Dict:
-    """Pad a batch of training features to a uniform length.
-
-    Args:
-        features: List of dicts with "input_ids" and "labels".
-        tokenizer: Tokenizer used to pad sequences.
-        max_length: Max sequence length to pad/truncate to.
-
-    Returns:
-        Dictionary with padded input_ids, attention_mask, and labels.
-    """
     input_batch = tokenizer.pad(
         {"input_ids": [f["input_ids"] for f in features]},
         padding=True,
@@ -68,17 +47,6 @@ def _pad_batch(features: List[Dict], tokenizer, max_length: int) -> Dict:
 
 
 def _prompt_from_row(builder: PromptBuilder, tokenizer, row: Dict, *, add_system: bool) -> str:
-    """Extract or build a prompt from a trace row.
-
-    Args:
-        builder: PromptBuilder used for message-based prompts.
-        tokenizer: Tokenizer used in the prompt builder.
-        row: Trace row dict with "prompt" or "messages".
-        add_system: Whether to insert a system prompt for messages.
-
-    Returns:
-        Prompt text ready for concatenation with the response.
-    """
     if "messages" in row:
         messages = row.get("messages") or []
         return builder.build_from_messages(tokenizer, messages, add_system=add_system)
@@ -89,14 +57,6 @@ def _prompt_from_row(builder: PromptBuilder, tokenizer, row: Dict, *, add_system
 
 
 def run_stage3(cfg: FinetuneConfig) -> Path:
-    """Run Stage 3 to fine-tune the student via LoRA.
-
-    Args:
-        cfg: FinetuneConfig with dataset, model, and training settings.
-
-    Returns:
-        Path to the output directory containing the LoRA adapter.
-    """
     set_global_seed(cfg.seed)
     rows = read_jsonl_rows(cfg.traces_jsonl)
     if not rows:
@@ -104,7 +64,6 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
 
     tokenizer = load_tokenizer(cfg.student, padding_side="left")
     model = load_causal_lm(cfg.student)
-    model.resize_token_embeddings(len(tokenizer))
     if hasattr(model, "config"):
         model.config.use_cache = False
 
@@ -167,11 +126,6 @@ def run_stage3(cfg: FinetuneConfig) -> Path:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser for Stage 3.
-
-    Returns:
-        Configured ArgumentParser instance.
-    """
     parser = argparse.ArgumentParser(description="Stage 3 – student finetune")
     parser.add_argument("--traces", type=Path, required=True)
     parser.add_argument("--student-model", type=str, required=True)
@@ -192,14 +146,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI entrypoint for Stage 3.
-
-    Args:
-        argv: Optional list of CLI arguments (defaults to sys.argv).
-
-    Returns:
-        None.
-    """
     parser = build_parser()
     args = parser.parse_args(argv)
     cfg = FinetuneConfig(

@@ -17,15 +17,6 @@ class GSM8KProvider(DatasetProvider):
     name = "gsm8k"
 
     def load(self, split: str, limit: int | None = None) -> Iterable[DatasetExample]:
-        """Load GSM8K question/answer pairs.
-
-        Args:
-            split: Dataset split name (e.g., "train", "test").
-            limit: Optional cap on the number of examples.
-
-        Returns:
-            Iterable of DatasetExample with prompt and solution fields.
-        """
         dataset = load_dataset("gsm8k", "main", split=split)
         total = len(dataset)
         max_rows = min(total, limit) if limit is not None else total

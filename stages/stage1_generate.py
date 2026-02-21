@@ -32,32 +32,12 @@ DATASET_PROVIDERS = {
 
 
 def _get_provider(name: str):
-    """Return a dataset provider by name.
-
-    Args:
-        name: Dataset name (e.g., "gsm8k", "oasst1").
-
-    Returns:
-        Dataset provider instance.
-
-    Raises:
-        ValueError: If the dataset name is unsupported.
-    """
     if name not in DATASET_PROVIDERS:
         raise ValueError(f"Unsupported dataset: {name}")
     return DATASET_PROVIDERS[name]
 
 
 def _batched(seq: List, batch_size: int) -> Iterable[List]:
-    """Yield list slices of length batch_size.
-
-    Args:
-        seq: List to batch.
-        batch_size: Size of each batch.
-
-    Yields:
-        Lists containing up to batch_size items.
-    """
     for start in range(0, len(seq), batch_size):
         yield seq[start : start + batch_size]
 
@@ -69,17 +49,6 @@ def _prepare_prompt(
     *,
     add_system: bool,
 ) -> tuple[str, dict]:
-    """Render a prompt and extract trace metadata from a dataset example.
-
-    Args:
-        builder: PromptBuilder for chat formatting.
-        tokenizer: Tokenizer used to render prompts.
-        example: Dataset example with prompt or messages.
-        add_system: Whether to include a system prompt when using messages.
-
-    Returns:
-        Tuple of (rendered prompt text, trace payload dict).
-    """
     if getattr(example, "messages", None):
         rendered = builder.build_from_messages(tokenizer, example.messages, add_system=add_system)
         return rendered, {"messages": example.messages}
@@ -90,30 +59,11 @@ def _prepare_prompt(
 
 
 def _needs_think_prefix(model_name: str) -> bool:
-    """Return True if the model expects a <think> prefix.
-
-    Args:
-        model_name: Full model name string.
-
-    Returns:
-        Boolean indicating whether to prepend "<think>".
-    """
     lowered = model_name.lower()
     return "r1" in lowered and "qwen" in lowered
 
 
 def _extract_gsm8k_solution(solution_text: str) -> str:
-    """Extract the numeric answer from a GSM8K solution string.
-
-    Args:
-        solution_text: Raw GSM8K solution containing a '####' delimiter.
-
-    Returns:
-        Cleaned numeric answer string.
-
-    Raises:
-        ValueError: If the expected delimiter or numeric answer is missing.
-    """
     if "####" not in solution_text:
         raise ValueError("GSM8K solution missing '####' delimiter")
     tail = solution_text.split("####")[-1]
@@ -128,15 +78,6 @@ def _extract_gsm8k_solution(solution_text: str) -> str:
 
 
 def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
-    """Run Stage 1 to generate teacher traces with optional watermarking.
-
-    Args:
-        cfg: GenerationConfig for dataset, models, and generation settings.
-        hash_cfg: HashConfig with seed and gamma.
-
-    Returns:
-        Path to the merged traces JSONL file.
-    """
     accelerator = Accelerator()
     set_global_seed(cfg.seed)
 
@@ -281,13 +222,21 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
     rank_path = tmp_dir / f"rank_{accelerator.process_index:03d}.json"
     with rank_path.open("w", encoding="utf-8") as handle:
         json.dump(rows, handle)
-    accelerator.wait_for_everyone()
+    
+    # accelerator.wait_for_everyone()
+    # If the barrier is buggy, lets wait instead.
+    wait_seconds = 60*5
+    accelerator.print(f"Waiting {wait_seconds} seconds for other processes to finish...")
+    import time
+    time.sleep(wait_seconds)
 
     if accelerator.is_main_process:
         merged: List[dict] = []
         for idx in range(accelerator.num_processes):
             shard = tmp_dir / f"rank_{idx:03d}.json"
             if not shard.exists():
+                # If not using wait_for_everyone(), could be missing data.
+                raise RuntimeError(f"Missing shard file: {shard}")
                 continue
             with shard.open("r", encoding="utf-8") as handle:
                 merged.extend(json.load(handle))
@@ -321,16 +270,12 @@ def run_stage1(cfg: GenerationConfig, hash_cfg: HashConfig) -> Path:
         for shard in tmp_dir.glob("rank_*.json"):
             shard.unlink()
         tmp_dir.rmdir()
-    accelerator.wait_for_everyone()
+    # # Also remove this final barrier if needed.
+    # accelerator.wait_for_everyone()
     return cfg.output_jsonl
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser for Stage 1.
-
-    Returns:
-        Configured ArgumentParser instance.
-    """
     parser = argparse.ArgumentParser(description="Stage 1 – teacher generation")
     parser.add_argument("--dataset", type=str, default="gsm8k")
     parser.add_argument("--split", type=str, default="train")
@@ -357,14 +302,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI entrypoint for Stage 1.
-
-    Args:
-        argv: Optional list of CLI arguments (defaults to sys.argv).
-
-    Returns:
-        None.
-    """
     parser = build_parser()
     args = parser.parse_args(argv)
     cfg = GenerationConfig(

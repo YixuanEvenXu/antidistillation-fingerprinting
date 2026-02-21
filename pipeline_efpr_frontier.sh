@@ -10,8 +10,14 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}${ROOT_DIR}"
 export PYTORCH_ALLOC_CONF="expandable_segments:True"
-ACC_CONFIG="${ROOT_DIR}/accelerate_config.yaml"
+ACC_CONFIG_MULTI="${ROOT_DIR}/acc_config_gpu_multi.yaml"
+ACC_CONFIG_SINGLE="${ROOT_DIR}/acc_config_gpu.yaml"
+ACC_CONFIG="${ACC_CONFIG_MULTI}"
 ACC_NUM_PROCS=8
+if [[ "${ACCELERATE_SINGLE_GPU:-0}" == "1" ]]; then
+    ACC_CONFIG="${ACC_CONFIG_SINGLE}"
+    ACC_NUM_PROCS=1
+fi
 
 YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
@@ -19,15 +25,11 @@ GREEN='\033[0;32m'
 RESET='\033[0m'
 
 READABLE_TIME() {
-    # Inputs: total seconds (integer).
-    # Output: prints formatted HH:MM:SS to stdout.
     local secs=$1
     printf "%02dh:%02dm:%02ds" $((secs/3600)) $(((secs%3600)/60)) $((secs%60))
 }
 
 abbrev_model() {
-    # Inputs: model name or path string.
-    # Output: echoes a filesystem-safe lowercase tag to stdout.
     local name="$1"
     name="${name##*/}"
     local lowered="$(echo "$name" | tr '[:upper:]' '[:lower:]')"
@@ -40,8 +42,6 @@ abbrev_model() {
 }
 
 run_stage() {
-    # Inputs: label, sentinel path, force flag, and command array.
-    # Output: runs the command, touches sentinel on success, returns status code.
     local label="$1"; shift
     local sentinel="$1"; shift
     local force="$1"; shift
@@ -51,6 +51,7 @@ run_stage() {
         return 0
     fi
     echo -e "${CYAN}▶ ${label}${RESET}"
+    echo "Command to be run: ${cmd[@]}"
     "${cmd[@]}"
     mkdir -p "$(dirname "$sentinel")"
     touch "$sentinel"
@@ -63,8 +64,8 @@ run_stage() {
 EXP_ROOT="${EXP_ROOT:-${ROOT_DIR}/experiments}"
 DATASET="${DATASET:-gsm8k}"
 SPLIT="${SPLIT:-train}"
-METHOD="${METHOD:-radioactive}"    # radioactive | ads | control
-DELTA="${DELTA:-2}"                # required for radioactive
+METHOD="${METHOD:-radioactive}" # radioactive | ads
+DELTA="${DELTA:-2}"              # required for radioactive
 LAMBDA="${LAMBDA:-16}"             # required for ads
 GAMMA="${GAMMA:-0.5}"
 HASH_SEED="${HASH_SEED:-}"
@@ -72,6 +73,10 @@ TRAIN_SEED="${TRAIN_SEED:-42}"
 ALT_SEED="${ALT_SEED:-43}"
 NUM_EXAMPLES="${NUM_EXAMPLES:-1024}"
 EPOCHS="${EPOCHS:-3}"
+TRIAL="${TRIAL:-0}"
+NUM_TRIALS="${NUM_TRIALS:-1}"
+
+USE_LOCAL_MODELS="${USE_LOCAL_MODELS:-0}"
 
 TEACHER_MODEL="${TEACHER_MODEL:-deepseek-ai/DeepSeek-R1-Distill-Qwen-7B}"
 TEACHER_DTYPE="${TEACHER_DTYPE:-bfloat16}"
@@ -99,12 +104,13 @@ LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
 MAX_SEQ_LEN="${MAX_SEQ_LEN:-4096}"
 PLOT_LABELS="${PLOT_LABELS:-0}"
 
-OASST1_LANG="${OASST1_LANG:-en}"
-OASST1_MIN_REVIEW="${OASST1_MIN_REVIEW:-1}"
-OASST1_MIN_CHARS="${OASST1_MIN_CHARS:-16}"
-OASST1_MAX_PROMPT_CHARS="${OASST1_MAX_PROMPT_CHARS:-2000}"
-OASST1_DROP_METADATA="${OASST1_DROP_METADATA:-0}"
-OASST1_LIMIT="${OASST1_LIMIT:-}"
+LM_EVAL_BATCH_SIZE="${LM_EVAL_BATCH_SIZE:-8}"
+LM_EVAL_TASKS="${LM_EVAL_TASKS:-gsm8k_cot}"
+LM_EVAL_PROJECT="${LM_EVAL_PROJECT:-adsfp-evals}"
+LM_EVAL_EXTRA_ARGS="${LM_EVAL_EXTRA_ARGS:-}"
+if [[ "${STUDENT_MODEL,,}" == *"qwen"* ]]; then
+    LM_EVAL_EXTRA_ARGS='--apply_chat_template --fewshot_as_multiturn'
+fi
 
 FT_BATCH=$(( EFFECTIVE_FT_BATCH / ACC_NUM_PROCS ))
 if [[ $FT_BATCH -lt 1 ]]; then
@@ -121,7 +127,28 @@ if [[ "$METHOD" == "radioactive" ]]; then
 elif [[ "$METHOD" == "ads" ]]; then
     method_label="${method_label}-lambda${LAMBDA//./_}"
 fi
-EXP_DIR="${EXP_ROOT%/}/${teacher_tag}_${proxy_tag}_${DATASET}_n${NUM_EXAMPLES}"
+# add the trial to differentiate the samples from different trials
+# justifiy the trial name so that it sorts properly
+# method_label="${method_label}-trial$(printf "%04d" "${TRIAL}")of$(printf "%04d" "${NUM_TRIALS}")"
+method_label="${method_label}-trial$(printf "%04d" "${TRIAL}")" # might allow adding more trials later
+
+# Now that tags are safely extracted, bc internet access on compute nodes is flaky ...
+# if using local models convert to hardcoded paths.
+if [[ "$USE_LOCAL_MODELS" == "1" ]]; then
+    if [[ "$TEACHER_MODEL" == "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B" ]]; then
+        TEACHER_MODEL="/lustre/orion/lrn089/scratch/jkirchen/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Qwen-7B/snapshots/916b56a44061fd5cd7d6a8fb632557ed4f724f60"
+    fi
+    if [[ "$PROXY_MODEL" == "Qwen/Qwen2.5-3B" ]]; then
+        PROXY_MODEL="/lustre/orion/lrn089/scratch/jkirchen/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B/snapshots/3aab1f1954e9cc14eb9509a215f9e5ca08227a9b"
+    fi
+    if [[ "$STUDENT_MODEL" == "meta-llama/Llama-3.2-3B" ]]; then
+        STUDENT_MODEL="/lustre/orion/lrn089/scratch/jkirchen/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B/snapshots/13afe5124825b4f3751f836b40dafda64c1ed062"
+    elif [[ "$STUDENT_MODEL" == "Qwen/Qwen2.5-3B" ]]; then
+        STUDENT_MODEL="/lustre/orion/lrn089/scratch/jkirchen/.cache/huggingface/hub/models--Qwen--Qwen2.5-3B/snapshots/3aab1f1954e9cc14eb9509a215f9e5ca08227a9b"
+    fi
+fi
+
+EXP_DIR="${EXP_ROOT%/}/efpr_${teacher_tag}_${proxy_tag}_${DATASET}_n${NUM_EXAMPLES}"
 HASH_DIR="${EXP_DIR}/hash_seed"
 HASH_CFG="${HASH_DIR}/hash_config.json"
 
@@ -145,54 +172,29 @@ ALT_TRACES_META="${ALT_TRACES_DIR}/metadata.json"
 TRAIN_TEACHER_EVAL="${TRAIN_TRACES_DIR}/teacher_eval.json"
 ALT_TEACHER_EVAL="${ALT_TRACES_DIR}/teacher_eval.json"
 
-MODEL_DIR="${EXP_DIR}/models/${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}"
+MODEL_IDENTIFIER="${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}"
+MODEL_DIR="${EXP_DIR}/models/${MODEL_IDENTIFIER}"
 LORA_DIR="${MODEL_DIR}/student_lora"
 
-METRICS_DIR="${EXP_DIR}/metrics/${student_tag}_${method_label}_lr${LR_TAG}_e${EPOCHS}"
+METRICS_DIR="${EXP_DIR}/metrics/${MODEL_IDENTIFIER}"
 METRIC_OPEN_SUP="${METRICS_DIR}/watermark_open_supervised.json"
 METRIC_CLOSED_SUP="${METRICS_DIR}/watermark_closed_supervised.json"
 METRIC_OPEN_UNSUP="${METRICS_DIR}/watermark_open_unsupervised.json"
 METRIC_CLOSED_UNSUP="${METRICS_DIR}/watermark_closed_unsupervised.json"
-OASST1_DATA_DIR="${EXP_DIR}/data"
-OASST1_JSONL="${OASST1_DATA_DIR}/oasst1_${SPLIT}.jsonl"
 
 mkdir -p "$TRAIN_TRACES_DIR" "$ALT_TRACES_DIR" "$MODEL_DIR" "$METRICS_DIR"
 FIG_DIR="${EXP_DIR}/figures"
 mkdir -p "$FIG_DIR"
 SENTINELS_DIR="${EXP_DIR}/.sentinels"
 mkdir -p "$SENTINELS_DIR"
+LM_EVAL_DIR="${EXP_DIR}/lm_eval"
+mkdir -p "$LM_EVAL_DIR"
 
-PY_CMD=(uv run python)
-ACC_CMD=(uv run accelerate launch --config_file "$ACC_CONFIG")
+PY_CMD=(python -u)
+ACC_CMD=(accelerate launch --config_file "$ACC_CONFIG")
 plot_label_flag=()
 if [[ "${PLOT_LABELS}" == "1" ]]; then
     plot_label_flag=(--show-labels)
-fi
-
-# ----------------------------------------------------------------------------
-# Dataset preparation (OASST1)
-# ----------------------------------------------------------------------------
-if [[ "$DATASET" == "oasst1" ]]; then
-    mkdir -p "$OASST1_DATA_DIR"
-    export OASST1_PATH="$OASST1_JSONL"
-    oasst_limit="$OASST1_LIMIT"
-    if [[ -z "$oasst_limit" ]]; then
-        oasst_limit=$(( NUM_EXAMPLES * 2 ))
-    fi
-    drop_flag=()
-    if [[ "${OASST1_DROP_METADATA:-0}" == "1" ]]; then
-        drop_flag=(--drop-metadata)
-    fi
-    run_stage "Dataset prep – OASST1" "$SENTINELS_DIR/oasst1_prep_${SPLIT}.done" "${FORCE_OASST1_PREP:-0}" \
-        "${PY_CMD[@]}" data/oasst1.py \
-        --split "$SPLIT" \
-        --lang "$OASST1_LANG" \
-        --min-review-count "$OASST1_MIN_REVIEW" \
-        --min-chars "$OASST1_MIN_CHARS" \
-        --max-prompt-chars "$OASST1_MAX_PROMPT_CHARS" \
-        --limit "$oasst_limit" \
-        "${drop_flag[@]}" \
-        --output "$OASST1_JSONL"
 fi
 
 # ----------------------------------------------------------------------------
@@ -231,7 +233,7 @@ stage1_train_args=(
 )
 if [[ "$METHOD" == "radioactive" ]]; then
     stage1_train_args+=(--delta "$DELTA")
-elif [[ "$METHOD" == "ads" ]]; then
+else
     stage1_train_args+=(--lam "$LAMBDA")
 fi
 run_stage "Stage 1 – Teacher Generation (train traces)" "$SENTINELS_DIR/stage1_train_${method_label}_seed${TRAIN_SEED}.done" "${FORCE_STAGE1_TRAIN:-0}" \
@@ -263,7 +265,7 @@ stage1_alt_args=(
 )
 if [[ "$METHOD" == "radioactive" ]]; then
     stage1_alt_args+=(--delta "$DELTA")
-elif [[ "$METHOD" == "ads" ]]; then
+else
     stage1_alt_args+=(--lam "$LAMBDA")
 fi
 run_stage "Stage 1 – Teacher Generation (alt traces)" "$SENTINELS_DIR/stage1_alt_${method_label}_seed${ALT_SEED}.done" "${FORCE_STAGE1_ALT:-0}" \
@@ -272,7 +274,7 @@ run_stage "Stage 1 – Teacher Generation (alt traces)" "$SENTINELS_DIR/stage1_a
 # ----------------------------------------------------------------------------
 # Stage 2 – teacher eval on training traces
 # ----------------------------------------------------------------------------
-if [[ "$DATASET" == "gsm8k" || "$DATASET" == "oasst1" ]]; then
+if [[ "$DATASET" == "gsm8k" ]]; then
     run_stage "Stage 2 – Teacher Eval (train traces)" "$SENTINELS_DIR/stage2_train_${method_label}_seed${TRAIN_SEED}.done" "${FORCE_STAGE2_TRAIN:-0}" \
         "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage2_teacher_eval.py \
         --traces "$TRAIN_TRACES_JSONL" \
@@ -291,7 +293,7 @@ fi
 # ----------------------------------------------------------------------------
 # Stage 2 – teacher eval on alternative traces
 # ----------------------------------------------------------------------------
-if [[ "$DATASET" == "gsm8k" || "$DATASET" == "oasst1" ]]; then
+if [[ "$DATASET" == "gsm8k" ]]; then
     run_stage "Stage 2 – Teacher Eval (alt traces)" "$SENTINELS_DIR/stage2_alt_${method_label}_seed${ALT_SEED}.done" "${FORCE_STAGE2_ALT:-0}" \
         "${ACC_CMD[@]}" --num_processes "${ACC_NUM_PROCS}" stages/stage2_teacher_eval.py \
         --traces "$ALT_TRACES_JSONL" \
@@ -415,5 +417,6 @@ run_stage "Stage 5 – Plotting" "$SENTINELS_DIR/stage5_${student_tag}_${method_
     --epochs "$EPOCHS" \
     "${plot_label_flag[@]}" \
     --variants open_supervised open_unsupervised closed_supervised closed_unsupervised
+
 
 echo -e "${GREEN}Pipeline complete. Results under ${EXP_DIR}.${RESET}"

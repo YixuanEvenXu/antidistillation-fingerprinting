@@ -21,18 +21,6 @@ class TokenOverlap:
 
 
 def load_tokenizer(spec: ModelSpec, *, padding_side: str) -> PreTrainedTokenizerBase:
-    """Load a tokenizer and ensure a valid pad token is configured.
-
-    Args:
-        spec: ModelSpec describing the tokenizer to load.
-        padding_side: Padding side ("left" or "right").
-
-    Returns:
-        Initialized Hugging Face tokenizer instance.
-
-    Raises:
-        ValueError: If no pad token is available after fallback logic.
-    """
     tokenizer = AutoTokenizer.from_pretrained(
         spec.name,
         padding_side=padding_side,
@@ -60,14 +48,6 @@ def load_tokenizer(spec: ModelSpec, *, padding_side: str) -> PreTrainedTokenizer
 
 
 def build_vocab_lookup(tokenizer: PreTrainedTokenizerBase) -> Dict[str, int]:
-    """Build a token string -> id lookup with de-duplication.
-
-    Args:
-        tokenizer: Tokenizer whose vocabulary should be indexed.
-
-    Returns:
-        Dictionary mapping token string to the smallest observed id.
-    """
     vocab = tokenizer.get_vocab()
     # Some tokenizers return duplicate entries; keep the first (smallest id) per token.
     dedup: Dict[str, int] = {}
@@ -78,14 +58,6 @@ def build_vocab_lookup(tokenizer: PreTrainedTokenizerBase) -> Dict[str, int]:
 
 
 def tokenizer_id_span(tokenizer: PreTrainedTokenizerBase) -> int:
-    """Return the maximum token id span for a tokenizer.
-
-    Args:
-        tokenizer: Tokenizer to inspect.
-
-    Returns:
-        Integer span covering max token id + 1 and tokenizer length.
-    """
     vocab = tokenizer.get_vocab()
     span = int(max(vocab.values())) + 1 if vocab else 0
     return max(span, len(tokenizer))
@@ -95,15 +67,6 @@ def compute_overlap(
     source: PreTrainedTokenizerBase,
     target: PreTrainedTokenizerBase,
 ) -> TokenOverlap:
-    """Compute shared tokens and id mapping from source to target tokenizer.
-
-    Args:
-        source: Source tokenizer whose ids are to be mapped.
-        target: Target tokenizer providing destination ids.
-
-    Returns:
-        TokenOverlap with a source->target id tensor and shared token strings.
-    """
     source_vocab = source.get_vocab()
     target_lookup = build_vocab_lookup(target)
     source_span = tokenizer_id_span(source)

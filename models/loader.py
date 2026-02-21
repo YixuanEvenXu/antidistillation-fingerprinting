@@ -19,17 +19,6 @@ _DTYPE_ALIASES = {
 
 
 def resolve_dtype(name: str) -> torch.dtype:
-    """Resolve a string dtype alias to a torch.dtype.
-
-    Args:
-        name: Dtype alias (e.g., "bf16", "float16").
-
-    Returns:
-        torch.dtype corresponding to the alias.
-
-    Raises:
-        ValueError: If the dtype alias is unsupported.
-    """
     key = name.lower()
     if key not in _DTYPE_ALIASES:
         raise ValueError(f"Unsupported dtype: {name}")
@@ -37,14 +26,6 @@ def resolve_dtype(name: str) -> torch.dtype:
 
 
 def load_causal_lm(spec: ModelSpec) -> AutoModelForCausalLM:
-    """Load a causal LM in evaluation mode.
-
-    Args:
-        spec: ModelSpec with model name and dtype.
-
-    Returns:
-        AutoModelForCausalLM instance set to eval() mode.
-    """
     dtype = resolve_dtype(spec.dtype)
     model = AutoModelForCausalLM.from_pretrained(
         spec.name,

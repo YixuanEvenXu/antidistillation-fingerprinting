@@ -23,15 +23,6 @@ ANSWER_FORCE_STRING = "\n\n**Final Answer**\n\\[\\boxed{"
 
 
 def _is_correct(candidate: str, solution: str) -> bool:
-    """Check equivalence between a candidate and solution using math_verify.
-
-    Args:
-        candidate: Candidate answer string.
-        solution: Reference solution string.
-
-    Returns:
-        True if the candidate is verified as correct, else False.
-    """
     try:
         sol = parse(solution)
         cand = parse(candidate)
@@ -41,28 +32,10 @@ def _is_correct(candidate: str, solution: str) -> bool:
 
 
 def _batch(seq: Sequence, size: int) -> List[Sequence]:
-    """Split a sequence into fixed-size batches.
-
-    Args:
-        seq: Sequence to batch.
-        size: Batch size.
-
-    Returns:
-        List of subsequences.
-    """
     return [seq[i : i + size] for i in range(0, len(seq), size)]
 
 
 def _pad_batch(features: List[Dict], tokenizer) -> Dict:
-    """Pad a batch of tokenized features and align labels.
-
-    Args:
-        features: List of dicts with "input_ids" and "labels".
-        tokenizer: Tokenizer used to pad sequences.
-
-    Returns:
-        Dictionary containing padded input_ids, attention_mask, and labels.
-    """
     input_batch = tokenizer.pad(
         {"input_ids": [f["input_ids"] for f in features]},
         padding=True,
@@ -80,17 +53,6 @@ def _pad_batch(features: List[Dict], tokenizer) -> Dict:
 
 
 def _prepare_nll_example(tokenizer, prompt: str, response: str, max_length: int | None) -> Dict[str, List[int]]:
-    """Prepare input/label ids for NLL computation.
-
-    Args:
-        tokenizer: Tokenizer to encode text.
-        prompt: Prompt text.
-        response: Response text.
-        max_length: Optional maximum sequence length.
-
-    Returns:
-        Dict with "input_ids" and "labels" for loss computation.
-    """
     prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
     response_ids = tokenizer(response, add_special_tokens=False)["input_ids"]
     input_ids = prompt_ids + response_ids
@@ -102,29 +64,12 @@ def _prepare_nll_example(tokenizer, prompt: str, response: str, max_length: int 
 
 
 def _split_think_prefix(response: str) -> tuple[str, str]:
-    """Split a <think> prefix from a response string.
-
-    Args:
-        response: Response text that may start with "<think>".
-
-    Returns:
-        Tuple of (prefix, remainder) where prefix is "<think>" or "".
-    """
     if response.startswith("<think>"):
         return "<think>", response[len("<think>"):]
     return "", response
 
 
 def _run_oasst1_nll(cfg: TeacherEvalConfig, traces: List[Dict]) -> Path:
-    """Compute mean NLL on OASST1 traces.
-
-    Args:
-        cfg: TeacherEvalConfig with model and runtime settings.
-        traces: List of trace rows with prompts/messages and responses.
-
-    Returns:
-        Path to the written evaluation JSON file.
-    """
     accelerator = Accelerator()
     set_global_seed(cfg.seed)
 
@@ -214,14 +159,6 @@ def _run_oasst1_nll(cfg: TeacherEvalConfig, traces: List[Dict]) -> Path:
 
 
 def run_stage2(cfg: TeacherEvalConfig) -> Path:
-    """Run Stage 2 teacher evaluation for GSM8K or OASST1.
-
-    Args:
-        cfg: TeacherEvalConfig with dataset, model, and output settings.
-
-    Returns:
-        Path to the written evaluation JSON file.
-    """
     accelerator = Accelerator()
     set_global_seed(cfg.seed)
 
@@ -304,16 +241,16 @@ def run_stage2(cfg: TeacherEvalConfig) -> Path:
             "answer_forced_accuracy": float(forced / denom),
         }
         write_json(cfg.output_path, payload)
-    accelerator.wait_for_everyone()
+    # accelerator.wait_for_everyone()
+    # If the barrier is buggy, lets wait instead.
+    wait_seconds = 60*5
+    accelerator.print(f"Waiting {wait_seconds} seconds for other processes to finish...")
+    import time
+    time.sleep(wait_seconds)
     return cfg.output_path
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI argument parser for Stage 2.
-
-    Returns:
-        Configured ArgumentParser instance.
-    """
     parser = argparse.ArgumentParser(description="Stage 2 – teacher evaluation")
     parser.add_argument("--traces", type=Path, required=True)
     parser.add_argument("--teacher-model", type=str, required=True)
@@ -328,14 +265,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI entrypoint for Stage 2.
-
-    Args:
-        argv: Optional list of CLI arguments (defaults to sys.argv).
-
-    Returns:
-        None.
-    """
     parser = build_parser()
     args = parser.parse_args(argv)
     cfg = TeacherEvalConfig(
